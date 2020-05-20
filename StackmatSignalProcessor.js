@@ -1,105 +1,132 @@
-class StackmatSignalProcessor extends AudioWorkletProcessor {
-  sign = 1
-  THRESHOLD_EDGE = 0.7
-  THRESHOLD_SCHMIDT = 0.2
-  duration = 0
-  recentValues = []
-  bitSize = 1
-  eventTarget;
+const THRESHOLD_EDGE = 0.7
 
-  bitBuffer = []
+class StackmatSignalProcessor extends AudioWorkletProcessor {
+  bitSampleRate
+  sign = 1
+  signalDuration = 0
+  signalBuffer = []
   byteBuffer = []
-  idleVal = 0
-  lastBit = 0
-  lastBitLength = 0
-  noStateLength = 0
-  byteStream = []
 
   constructor() {
     super()
-    this.bitSize = sampleRate / 1200
-    this.recentValues.length = Math.ceil(this.bitSize / 6)
-    this.byteStream.length = 30
+    this.bitSampleRate = sampleRate / 1200 // Stackmat only
+    this.signalBuffer.length = Math.ceil(this.bitSampleRate / 6)
+    this.bits = new BitStream()
   }
 
   process(inputs, outputs) {
     let power
-    let lastPower = 1
     let gain
+    let lastPower = 1
     let agcFactor = 0.0001
 
     inputs[0][0].forEach(input => {
       power = input * input
       lastPower = Math.max(agcFactor, lastPower + (power-lastPower) * agcFactor)
       gain = 1 / Math.sqrt(lastPower)
-      this.disectChunks(input*gain)
-    })
-
-    const output = outputs[0]
-    output.forEach(channel => {
-      for (let i = 0; i < this.byteStream.length; i++) {
-        channel[i] = this.byteStream[i]
-      }
+      this.processSignal(input*gain)
     })
   
     return true
   }
 
-  disectChunks(signal) {
-    this.recentValues.unshift(signal)
-    let lastValue = this.recentValues.pop()
-    this.duration++;
+  processSignal(signal) {
+    this.signalBuffer.unshift(signal)
+    let lastSignal = this.signalBuffer.pop()
+    this.signalDuration++;
 
-    if ((lastValue - signal) * (this.sign ? 1 : -1) > this.THRESHOLD_EDGE && Math.abs(signal - (this.sign ? 1 : -1)) - 1 > this.THRESHOLD_SCHMIDT && this.duration > this.bitSize * 0.6) {
-      for (let i = 0; i < Math.round(this.duration / this.bitSize); i++) {
-        this.appendBit(this.sign)
+    if (this.signalIsEdge(signal, lastSignal)) {
+      for (let i = 0; i < Math.round(this.signalDuration / this.bitSampleRate); i++) {
+        this.bits.append(this.sign)
+
+        if (this.bits.isEmpty()) {
+          this.byteBuffer = [] // align byte blocks
+        }
+        
+        if (this.bits.isFull()) {
+          this.byteBuffer.push(this.bits.dump())
+
+          if (this.byteBuffer.length >= 10) {
+            this.processByteBlock()
+          }
+        }
       }
       this.sign ^= 1
-      this.duration = 0
+      this.signalDuration = 0
     }
   }
 
-  appendBit(bit) {
-    this.bitBuffer.push(bit)
-
-    if (bit != this.lastBit) {
-      this.lastBitLength = 0
-    }
-    
-    this.lastBit = bit
-    this.lastBitLength++
-
-    if (this.lastBitLength > 10) {
-      this.idleVal = bit
-      this.bitBuffer = []
-      this.byteBuffer = []
-    }
-
-    if (this.bitBuffer.length == 10) {
-      if (this.bitBuffer[0] == this.idleVal || this.bitBuffer[9] != this.idleVal) {
-        this.bitBuffer = this.bitBuffer.slice(1)
-      } else {
-        let val = 0
-        for (var i = 8; i > 0; i--) {
-					val = val << 1 | (this.bitBuffer[i] == this.idleVal ? 1 : 0)
-        }
-				this.bitBuffer = []
-        this.byteBuffer.push(String.fromCharCode(val))
-        this.byteStream.shift()
-        this.byteStream.push((val / 128) - 1)
-        if (this.byteBuffer.length >= 9) {
-          console.log(decode(this.byteBuffer));
-        }
-      }
-    }
+  signalIsEdge(signal, lastSignal) {
+    return Math.abs(lastSignal - signal) > THRESHOLD_EDGE && this.signalDuration > this.bitSampleRate * 0.6
   }
 
-  appendByteStream(state, time) {
-    return
+  processByteBlock() {
+    const state = decodeByteBlock(this.byteBuffer)
+    this.byteBuffer = []
+
+    this.port.postMessage(state)
   }
 }
 
-function decode(byteBuffer) {
+class BitStream {
+  buffer = []
+  idleValue = 0
+  lastBit = 0
+  lastBitLength = 0
+
+  append(bit) {
+    this.buffer.push(bit)
+    this.lastBitLength = bit === this.lastBit ? this.lastBitLength + 1 : 1
+    this.lastBit = bit
+
+    if (this.lastBitLength > 10) {
+      this.idleValue = bit
+      this.reset(bit)
+    }
+  }
+
+  reset() {
+    this.buffer = []
+  }
+
+  isEmpty() {
+    return this.buffer.length === 0
+  }
+
+  isFull() {
+    if (this.buffer.length >= 10) {
+      if (this.buffer[0] == this.idleValue || this.buffer[9] != this.idleValue) {
+        this.buffer = this.buffer.slice(1)
+        return false
+      } else {
+        return true
+      }
+    }
+    return false
+  }
+
+  toByte() {
+    let byte = 0
+    for (var i = 8; i > 0; i--) {
+      byte = byte << 1 | this.buffer[i] === this.idleValue
+    }
+    return String.fromCharCode(byte)
+  }
+
+  dump() {
+    const byte = this.toByte() ?? {
+      error: "Bad Signal",
+      state: null,
+      time: null,
+    }
+    this.reset()
+
+    return byte
+  }
+}
+
+
+function decodeByteBlock(byteBuffer) {
   let sum = 64
   let time = 0
   const reIsDigit = RegExp('[0-9]')
@@ -109,31 +136,128 @@ function decode(byteBuffer) {
   const checksum = byteBuffer.shift(0)
   const semantics = byteBuffer
 
-  console.info({state, digits, checksum, semantics})
-
   if (!reIsValidState.test(state)) {
-    console.info('Failed State check!')
     return
   }
 
   for (let i = 0; i < digits.length; i++) {
     if (!reIsDigit.test(digits[i])) {
-      console.info('Failed digit check!', digits[i])
       return
     }
     sum += ~~digits[i]
   }
 
   if (checksum.charCodeAt(0) !== sum) {
-    console.info('Failed Check sum check!')
     return
   }
 
-  time = ~~digits[0]*60000 + 1000*(~~digits[1]*10 + ~~digits[2]) + ~~digits[3]*100 + ~~digits[4]*10 + ~~digits[5]
+  time += ~~digits[0]*60000 // minutes
+  time += 1000*(~~digits[1]*10 + ~~digits[2]) // seconds
+  time += ~~digits[3]*100 + ~~digits[4]*10 + ~~digits[5] // milliseconds
 
   return {
-    state: state,
+    ...StackmatStates.get(state),
     time: time,
+    isReset: time === 0,
+  }
+}
+
+const StackmatStates = {
+  base: {
+    state: {
+      id: -1,
+      descriptor: "ERROR",
+    },
+    rightHand: false,
+    leftHand: false,
+    bothHands: false,
+    isReset: false,
+    isRunning: false,
+    time: 0
+  },
+  get: stateCode => {
+    switch(stateCode) {
+      case " ":
+        StackmatStates.base.isRunning = true
+        StackmatStates.base.isreset = false
+        return {
+          ...StackmatStates.base,
+          state: {
+            id: 1,
+            descriptor: "RUNNING",
+          },
+        }
+      case "A":
+        return {
+          ...StackmatStates.base,
+          state: {
+            id: 2,
+            descriptor: "STARTING",
+          },
+          rightHand: true,
+          leftHand: true,
+          bothHands: true,
+        }
+      case "C":
+        StackmatStates.base.isRunning = false
+        return {
+          ...StackmatStates.base,
+          state: {
+            id: 3,
+            descriptor: "BOTH_HANDS",
+          },
+          rightHand: true,
+          leftHand: true,
+          bothHands: true,
+        }
+      case "I":
+        StackmatStates.base.isRunning = false
+        return {
+          ...StackmatStates.base,
+          state: {
+            id: 4,
+            descriptor: "IDLE",
+          },
+        }
+      case "L":
+        return {
+          ...StackmatStates.base,
+          state: {
+            id: 6,
+            descriptor: "LEFT",
+          },
+          leftHand: true,
+        }
+      case "S":
+        StackmatStates.base.isRunning = false
+        return {
+          ...StackmatStates.base,
+          state: {
+            id: 7,
+            descriptor: "STOPPED",
+          },
+          rightHand: true,
+          leftHand: true,
+          bothHands: true,
+        }
+      case "R":
+        return {
+          ...StackmatStates.base,
+          state: {
+            id: 8,
+            descriptor: "RIGHT",
+          },
+          rightHand: true,
+        }
+      default:
+        return {
+          ...StackmatStates.base,
+          state: {
+            id: -1,
+            descriptor: "ERROR",
+          },
+        }
+    }
   }
 }
 
