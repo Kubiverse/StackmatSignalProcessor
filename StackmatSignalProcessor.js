@@ -61,7 +61,7 @@ class StackmatSignalProcessor extends AudioWorkletProcessor {
   }
 
   processByteBlock() {
-    const state = decodeByteBlock(this.byteBuffer)
+    const state = decodeByteBlock(this.byteBuffer) || {...StackmatStates.get('X')}
     this.byteBuffer = []
 
     this.port.postMessage(state)
@@ -114,11 +114,7 @@ class BitStream {
   }
 
   dump() {
-    const byte = this.toByte() ?? {
-      error: "Bad Signal",
-      state: null,
-      time: null,
-    }
+    const byte = this.toByte()
     this.reset()
 
     return byte

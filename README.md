@@ -25,13 +25,12 @@ async function connect() {
 
   // Create an Audio Node for the Stackmat Signal Processor
   const stackmatSignal = new AudioWorkletNode(audioContext, 'StackmatSignalProcessor')
-    
-  // Connect the Audio Nodes: Mic -> Stackmat Signal Processor -> Stackmat Signal Analyser
-  microphone.connect(stackmatSignal)
 
-  // Register Stackmat events
+  microphone.connect(stackmatSignal)
+  stackmatSignal.connect(audioContext.destination)
+
   stackmatSignal.port.onmessage = event => {
-    // Do magic with event.data
+    handle(event.data)
   }
 }
 ```
@@ -58,7 +57,11 @@ Note: Do not connect the Audio nodes to the device, as the Stackmat Signal Proce
 ## Timers Supported so far
 
 ✔ Stackmat Timer Gen 4
+
 ✔ Stackmat Timer Gen 4 (with faulty pad detection)
+
 ❌ Stackmat Timer Gen 3
+
 ❌ Yuxin Timer v2
+
 ❌ Moyu Timer
