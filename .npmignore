@@ -1,0 +1,6 @@
+#build
+build.sh
+
+#editor settings
+.idea
+.editorconfig
