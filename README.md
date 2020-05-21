@@ -2,6 +2,11 @@
 An Audio Worklet to process Stackmat Signals in real time and communicating an event stream through the Worker's message broker.
 
 
+## Installation
+You can install it using NPM
+
+`npm i stackmat-signal-processor`
+
 ## Example usage
 A simple example of how to implement the Stackmat Signal Processor with an Analyser.
 ```js
