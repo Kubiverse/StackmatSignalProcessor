@@ -5,6 +5,8 @@ An Audio Worklet to process Stackmat Signals in real time and communicating an e
 ## Example usage
 A simple example of how to implement the Stackmat Signal Processor with an Analyser.
 ```js
+import StackmatSignalProcessor from 'stackmat-signal-processor'
+
 async function connect() {
   // Connect to media device
   let stream = await navigator.mediaDevices.getUserMedia({
@@ -21,7 +23,7 @@ async function connect() {
   const microphone = audioContext.createMediaStreamSource(stream)
 
   // Connecting the StackmatSignalProcessor
-  await audioContext.audioWorklet.addModule('https://raw.githubusercontent.com/Kubiverse/StackmatSignalProcessor/master/StackmatSignalProcessor.js')
+  await audioContext.audioWorklet.addModule(StackmatSignalProcessor)
 
   // Create an Audio Node for the Stackmat Signal Processor
   const stackmatSignal = new AudioWorkletNode(audioContext, 'StackmatSignalProcessor')

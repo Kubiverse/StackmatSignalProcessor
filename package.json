@@ -1,0 +1,25 @@
+{
+  "name": "stackmat-signal-processor",
+  "version": "0.1.0",
+  "description": "An Audio Worklet Processor for translating Stackmat Audio Signals into meaningful message through the worklet MessagePort",
+  "main": "dist/StackmatSignalProcessor.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "build.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kubiverse/StackmatSignalProcessor.git"
+  },
+  "keywords": [
+    "stackmat",
+    "speedcubing",
+    "cubing"
+  ],
+  "author": "Oscar Roth Andersen",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Kubiverse/StackmatSignalProcessor/issues"
+  },
+  "homepage": "https://github.com/Kubiverse/StackmatSignalProcessor#readme"
+}
